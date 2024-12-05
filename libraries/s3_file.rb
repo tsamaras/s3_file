@@ -5,7 +5,7 @@ require 'base64'
 module S3FileLib
 
   module SigV2
-  def self.sign(request, bucket, path, *args)
+    def self.sign(request, bucket, path, *args)
       token = args[2] if args[2]
       now = Time.now().utc.strftime('%a, %d %b %Y %H:%M:%S GMT')
       string_to_sign = "#{request.method}\n\n\n%s\n" % [now]
@@ -87,7 +87,7 @@ module S3FileLib
     end
   end
 
-  def self.do_request(method, url, bucket, path, *args, public_bucket: public_bucket)
+  def self.do_request(method, url, bucket, path, *args, public_bucket: self.public_bucket)
     region = args[3]
     url = build_endpoint_url(bucket, region) if url.nil?
 
@@ -135,26 +135,23 @@ module S3FileLib
     return {"md5" => etag}.merge(digests)
   end
 
-  def self.get_digests_from_s3(bucket, url, path, *args, timeout: 300,open_timeout: 10, retries: 5, public_bucket: public_bucket)
-    now, auth_string = get_s3_auth("HEAD", bucket, path, args[1], args[2], args[3])
+  def self.get_digests_from_s3(bucket, url, path, *args, retries: 5, public_bucket: self.public_bucket)
     max_tries = retries + 1
-    headers = build_headers(now, auth_string, token)
     saved_exception = nil
 
-    while (max_tries > 0)
+    while max_tries > 0
       begin
 
-        response = RestClient.head('https://%s.s3.amazonaws.com%s' % [bucket,path], headers)
-
+        response = do_request('HEAD', url, bucket, path, args[0], args[1], args[2], args[3], public_bucket: public_bucket)
         etag = response.headers[:etag].gsub('"','')
         digest = response.headers[:x_amz_meta_digest]
         digests = digest.nil? ? {} : Hash[digest.split(",").map {|a| a.split("=")}]
 
         return {"md5" => etag}.merge(digests)
 
-        rescue => e
-           max_tries = max_tries - 1
-           saved_exception = e
+      rescue => e
+        max_tries = max_tries - 1
+        saved_exception = e
       end
     end
     raise saved_exception
@@ -185,7 +182,7 @@ module S3FileLib
   end
 
 
-  def self.get_from_s3(bucket, url, path, aws_access_key_id, aws_secret_access_key, token, public_bucket: public_bucket, verify_md5: false, region: nil)
+  def self.get_from_s3(bucket, url, path, aws_access_key_id, aws_secret_access_key, token, public_bucket: self.public_bucket, verify_md5: false, region: nil)
     response = nil
     retries = 5
     for attempts in 0..retries
